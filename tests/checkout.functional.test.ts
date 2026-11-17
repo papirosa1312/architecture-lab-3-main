@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { CheckoutController } from "../src/checkout/CheckoutController.ts";
 import { database, resetDatabase } from "../src/database.ts";
 import { auditLog, runtimeConfig } from "../src/config.ts";
+import { mapPaymentStatus } from "../src/payments/mapPaymentStatus.ts";
 
 test.beforeEach(() => {
   resetDatabase();
@@ -51,4 +52,23 @@ test("checkout rejects an unavailable product", async () => {
     }),
     /Insufficient stock/,
   );
+});
+
+test("mapPaymentStatus normalizes paid, processing, failed and unknown provider statuses", () => {
+  assert.equal(mapPaymentStatus({ charge_id: "ch_1", state: "succeeded" }), "paid");
+  assert.equal(mapPaymentStatus({ charge_id: "ch_2", state: "requires_action" }), "processing");
+  assert.equal(mapPaymentStatus({ charge_id: "ch_3", state: "declined" }), "failed");
+  assert.equal(mapPaymentStatus({ state: "unexpected_gateway_code" }), "failed");
+});
+
+test("checkout supports processing payment status without breaking existing contract", async () => {
+  const response = await new CheckoutController().checkout({
+    orderId: "order-proc",
+    paymentToken: "proc_3ds",
+    currency: "UAH",
+    lines: [{ productId: "book", unitPrice: 100, quantity: 1 }],
+  });
+
+  assert.equal(response.paymentStatus, "processing");
+  assert.equal(response.status, "payment_pending");
 });
